@@ -43,6 +43,7 @@ public class LogoutPlugIn : ILogoutPlugIn
             LogoutType.CloseGame => LogOutType.CloseGame,
             LogoutType.BackToServerSelection => LogOutType.BackToServerSelection,
             LogoutType.BackToCharacterSelection => LogOutType.BackToCharacterSelection,
+            LogoutType.Refused => (LogOutType)3, // VORTHANIA: the Vorthania client stays in game on 3.
             _ => throw new ArgumentException($"Unhandled enum value {logoutType}."),
         };
     }

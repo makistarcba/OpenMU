@@ -6,6 +6,7 @@ namespace MUnique.OpenMU.GameLogic.PlayerActions.PlayerStore;
 
 using MUnique.OpenMU.DataModel.Configuration.Items;
 using MUnique.OpenMU.GameLogic.PlayerShopCurrencies;
+using MUnique.OpenMU.GameLogic.PlugIns.Vorthania;
 using MUnique.OpenMU.GameLogic.Views.PlayerShop;
 
 /// <summary>
@@ -25,6 +26,19 @@ public class OpenStoreAction
         if (character is null)
         {
             player.Logger.LogWarning("OpenStore request failed: No character selected.");
+            return;
+        }
+
+        // VORTHANIA: mínimo de resets para abrir tienda. Corta los personajes creados solo para
+        // vender. Ver ResetRequirementsPlugIn.
+        if (player.GameContext.FeaturePlugIns.GetPlugIn<ResetRequirementsPlugIn>() is { } resetRequirements
+            && !resetRequirements.MayOpenStore(player, out var storeMessage))
+        {
+            if (storeMessage is { } message)
+            {
+                await player.ShowBlueMessageAsync(message).ConfigureAwait(false);
+            }
+
             return;
         }
 

@@ -229,6 +229,12 @@ public sealed class ChaosCastleContext : MiniGameContext
 
         this._highScoreTable = scoreList.AsReadOnly();
 
+        // VORTHANIA: el mejor de los que quedaron en pie gana tiempo de LaCleon.
+        if (sortedFinishers.Select(state => state.Player).FirstOrDefault(p => p.IsAlive && p.CurrentMap == this.Map) is { } laCleonWinner)
+        {
+            await MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon.LaCleonEventPlugIn.RewardAsync(laCleonWinner, MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon.LaCleonRewardSource.ChaosCastle).ConfigureAwait(false);
+        }
+
         await this.SaveRankingAsync(sortedFinishers.Select(state => (state.Rank, state.Player.SelectedCharacter!, state.Score))).ConfigureAwait(false);
         await base.GameEndedAsync(finishers).ConfigureAwait(false);
     }

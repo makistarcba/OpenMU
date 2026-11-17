@@ -59,7 +59,8 @@ public class UpdateCharacterStatsExtendedPlugIn : IUpdateCharacterStatsPlugIn
                 MapId = ShortExtensions.ToUnsigned(map.Number),
                 CurrentExperience = (ulong)character.Experience,
                 ExperienceForNextLevel = (ulong)experienceForNextLevel,
-                LevelUpPoints = (ushort)Math.Max(0, character.LevelUpPoints),
+                // VORTHANIA: Clamp y no Math.Max: LevelUpPoints pasa los 65.535 (600 puntos por reset) y el protocolo es ushort; sin el tope daba la vuelta.
+                LevelUpPoints = (ushort)Math.Clamp(character.LevelUpPoints, 0, ushort.MaxValue),
                 Strength = (ushort)attributes[Stats.BaseStrength],
                 Agility = (ushort)attributes[Stats.BaseAgility],
                 Vitality = (ushort)attributes[Stats.BaseVitality],

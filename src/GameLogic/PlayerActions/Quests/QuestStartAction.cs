@@ -4,6 +4,7 @@
 
 namespace MUnique.OpenMU.GameLogic.PlayerActions.Quests;
 
+using MUnique.OpenMU.DataModel.Configuration.Quests;
 using MUnique.OpenMU.GameLogic.Views.Inventory;
 using MUnique.OpenMU.GameLogic.Views.Quest;
 
@@ -34,6 +35,15 @@ public class QuestStartAction
             return;
         }
 
+        // VORTHANIA: el gate por resets. El nivel no sirve para esto porque un reset devuelve el
+        // personaje al nivel 1 (ver docs/10).
+        if (!quest.IsResetRangeFulfilled(player))
+        {
+            player.Logger.LogDebug("Failed, reset count not in allowed range {0} to {1}.", quest.MinimumResets, quest.MaximumResets);
+            await player.ShowBlueMessageAsync($"You need at least {quest.MinimumResets} resets for this quest.").ConfigureAwait(false);
+            return;
+        }
+
         var questState = player.SelectedCharacter!.QuestStates.FirstOrDefault(q => q.Group == group);
         if (questState is null)
         {
@@ -49,7 +59,21 @@ public class QuestStartAction
             return;
         }
 
-        if (Equals(questState.LastFinishedQuest, quest) && !quest.Repeatable)
+        // VORTHANIA: el período manda por encima de Repeatable. Una quest con período se puede
+        // rehacer, pero recién después del corte de calendario; una sin período se comporta como
+        // en upstream.
+        if (quest.Period != QuestPeriod.None)
+        {
+            if (!quest.IsPeriodElapsed(questState, player.GameContext.ServerTimeZone))
+            {
+                player.Logger.LogDebug("The quest was already done in this period ({0}).", quest.Period);
+                await player.ShowBlueMessageAsync(quest.Period == QuestPeriod.Daily
+                    ? "You already completed this quest today. Come back tomorrow."
+                    : "You already completed this quest this week. Come back next week.").ConfigureAwait(false);
+                return;
+            }
+        }
+        else if (Equals(questState.LastFinishedQuest, quest) && !quest.Repeatable)
         {
             player.Logger.LogDebug("The quest is not repeatable.");
             return;

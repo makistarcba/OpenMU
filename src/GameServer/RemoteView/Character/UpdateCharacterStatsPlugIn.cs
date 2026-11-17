@@ -44,7 +44,11 @@ public class UpdateCharacterStatsPlugIn : IUpdateCharacterStatsPlugIn
             (byte)this._player.SelectedCharacter!.CurrentMap!.Number.ToUnsigned(),
             (ulong)this._player.SelectedCharacter.Experience,
             (ulong)this._player.GameServerContext.ExperienceTable[(int)this._player.Attributes![Stats.Level] + 1],
-            (ushort)Math.Max(0, this._player.SelectedCharacter.LevelUpPoints),
+
+            // VORTHANIA: era Math.Max(0, ...), que solo protege del negativo. LevelUpPoints es un
+            // int y con 600 puntos por reset pasa 65.535 en el reset 110: el cast daba la vuelta y
+            // el cliente mostraba 464 en vez de 66.000. Clamp arriba y abajo.
+            (ushort)Math.Clamp(this._player.SelectedCharacter.LevelUpPoints, 0, ushort.MaxValue),
             (ushort)this._player.Attributes[Stats.BaseStrength],
             (ushort)this._player.Attributes[Stats.BaseAgility],
             (ushort)this._player.Attributes[Stats.BaseVitality],

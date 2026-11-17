@@ -122,6 +122,9 @@ public sealed class BloodCastleContext : MiniGameContext
 
         this._winner = player;
         await player.InvokeViewPlugInAsync<IShowDialogPlugIn>(p => p.ShowDialogAsync(DialogCategoryMain, (byte)DialogNumber.EventWinner)).ConfigureAwait(false);
+
+        // VORTHANIA: el que entrega el arma gana tiempo de LaCleon.
+        await MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon.LaCleonEventPlugIn.RewardAsync(player, MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon.LaCleonRewardSource.BloodCastle).ConfigureAwait(false);
         this.FinishEvent();
     }
 

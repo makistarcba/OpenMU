@@ -19,6 +19,28 @@ public class ResetConfiguration
     public int? ResetLimit { get; set; }
 
     /// <summary>
+    /// Gets or sets the date at which the season started. It's the reference point for the <see cref="ResetLimitSchedule"/>.
+    /// </summary>
+    /// <remarks>
+    /// VORTHANIA: la fecha de apertura del server. La semana 1 son los siete días que empiezan acá.
+    /// Sin fecha, el calendario se ignora y manda el <see cref="ResetLimit"/> de siempre.
+    /// </remarks>
+    [Display(Name = "Season start date")]
+    public DateOnly SeasonStart { get; set; }
+
+    /// <summary>
+    /// Gets or sets the reset limit per week of the season. It overrides the <see cref="ResetLimit"/>.
+    /// </summary>
+    /// <remarks>
+    /// VORTHANIA: la progresión de la temporada. Cada fila dice "a partir de la semana N, el tope es X".
+    /// Se evalúa en cada reset, así que no hay que tocar nada a mano los lunes. Ver docs/12 y docs/14.
+    /// </remarks>
+    [Display(Name = "Reset limit schedule")]
+    [MemberOfAggregate]
+    [ScaffoldColumn(true)]
+    public ICollection<ResetLimitWeek> ResetLimitSchedule { get; set; } = [];
+
+    /// <summary>
     /// Gets or sets the required level for a reset.
     /// </summary>
     [Display(ResourceType = typeof(PlugInResources), Name = nameof(PlugInResources.ResetConfiguration_RequiredLevel_Name))]
@@ -121,6 +143,24 @@ public class ResetConfiguration
         /// </summary>
         [Display(Name = nameof(MUnique.OpenMU.GameLogic.Properties.PlugInResources.ResetPointTier_PointsGranted_Name), ResourceType = typeof(MUnique.OpenMU.GameLogic.Properties.PlugInResources))]
         public int PointsGranted { get; set; }
+    }
+
+    /// <summary>
+    /// Tier definition for the reset limit which applies from a week of the season on.
+    /// </summary>
+    public class ResetLimitWeek
+    {
+        /// <summary>
+        /// Gets or sets the week of the season from which this limit applies. The first week is the week 1.
+        /// </summary>
+        [Display(Name = "From week")]
+        public int FromWeek { get; set; } = 1;
+
+        /// <summary>
+        /// Gets or sets the maximum amount of resets from this week on. Zero means no limit.
+        /// </summary>
+        [Display(Name = "Reset limit")]
+        public int ResetLimit { get; set; }
     }
 
     /// <summary>

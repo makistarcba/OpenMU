@@ -799,6 +799,15 @@ public class Player : AsyncDisposable, IBucketMapObserver, IAttackable, IAttacke
             return null;
         }
 
+        // VORTHANIA: en el mapa del evento LaCleon los jugadores (y sus invocaciones) no se pueden pegar.
+        if ((attacker is Player || (attacker as Monster)?.SummonedBy is not null)
+            && this.CurrentMap is { } laCleonPvpMap
+            && this.GameContext.FeaturePlugIns.GetPlugIn<MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon.LaCleonEventPlugIn>() is { } laCleonEvent
+            && laCleonEvent.IsPvpBlocked(laCleonPvpMap.Definition.Number))
+        {
+            return null;
+        }
+
         if (!this.GameContext.PvpEnabled && this.CurrentMap?.Definition.BattleZone == null &&
             this.CurrentMiniGame?.AllowPlayerKilling is false)
         {
@@ -1713,6 +1722,8 @@ public class Player : AsyncDisposable, IBucketMapObserver, IAttackable, IAttacke
         if (this._selectedCharacter is not { } currentCharacter
             || currentCharacter.State is HeroState.Normal or HeroState.New)
         {
+            // VORTHANIA: nuestro arreglo de la caducidad invertida del PK lo hizo upstream (17/10/2026),
+            // con resto de segundos y tope del tiempo que crecio por el bug (LimitHeroStateRemainingTime).
             this._heroStateSecondsRemainder = 0;
             return;
         }

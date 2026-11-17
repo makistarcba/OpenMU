@@ -23,4 +23,10 @@ public enum LogoutType : byte
     /// This is sent by the client when the player wants to go back to the server selection screen.
     /// </summary>
     BackToServerSelection,
+
+    /// <summary>
+    /// VORTHANIA: Sent by the server only. The requested logout was refused or cancelled
+    /// (e.g. self-defense is active), the player stays in the game.
+    /// </summary>
+    Refused,
 }

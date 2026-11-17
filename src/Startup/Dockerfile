@@ -4,6 +4,7 @@ WORKDIR /app
 # tzdata provides the IANA time zones (e.g. America/Argentina/Buenos_Aires) for the server time zone setting.
 # icu-data-full: icu-libs alone brings the English culture data only, so a player's language like
 # "pl" isn't found and every player gets the English texts.
+# VORTHANIA: upstream ya instala tzdata (antes lo agregabamos nosotros para la hora de Argentina).
 RUN apk add --no-cache icu-libs icu-data-full tzdata
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
@@ -51,7 +52,8 @@ COPY --from=publish /app/publish .
 # The container runs as a non-root user, but /app belongs to root. Directories the
 # application writes to have to be created and made writable beforehand - the data
 # protection key ring among them, which protects the admin panel sessions.
-RUN mkdir -p /app/logs /app/data-protection-keys && chmod 777 /app/logs /app/data-protection-keys
+# VORTHANIA: /app/vorthania-state keeps the daily time of the LaCleon event between restarts.
+RUN mkdir -p /app/logs /app/data-protection-keys /app/vorthania-state && chmod 777 /app/logs /app/data-protection-keys /app/vorthania-state
 
 ARG APP_UID=1000
 USER ${APP_UID}

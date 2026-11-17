@@ -47,7 +47,10 @@ public sealed class ItemBoxDroppedPlugIn : IItemDropPlugIn
 
         if (item is not null)
         {
-            var droppedItem = new DroppedItem(item, player.Position, player.CurrentMap!, player);
+            // Vorthania: el item cae donde se tiro la caja (no bajo el personaje) y queda reservado
+            // para el que la abrio (y su party) durante la prioridad de recogida, igual que un drop de monstruo.
+            var owners = player.Party?.PartyList.AsEnumerable() ?? player.GetAsEnumerable();
+            var droppedItem = new DroppedItem(item, target, player.CurrentMap!, player, owners);
             await player.CurrentMap!.AddAsync(droppedItem).ConfigureAwait(false);
         }
 

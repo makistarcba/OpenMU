@@ -26,6 +26,8 @@ public abstract class ChatCommandPlugInBase<T> : IChatCommandPlugIn
     {
         try
         {
+            this.LogGameMasterCommand(player, command);
+
             var arguments = await command.TryParseArgumentsAsync<T>(player).ConfigureAwait(false);
             if (arguments is not null)
             {
@@ -36,6 +38,40 @@ public abstract class ChatCommandPlugInBase<T> : IChatCommandPlugIn
         {
             player.Logger.LogError(ex, $"Unexpected error handling the chat command '{this.Key}'.", command);
         }
+    }
+
+    /// <summary>
+    /// VORTHANIA: Writes an audit entry for every command that requires game master rights.
+    /// </summary>
+    /// <param name="player">The player who issued the command.</param>
+    /// <param name="command">The raw command, arguments included.</param>
+    /// <remarks>
+    /// Upstream solo loguea EXCEPCIONES. No queda registro de quién ejecutó qué, así que un
+    /// /setmoney o un /setresets no deja rastro: aparece un personaje con 2.000 millones de zen y
+    /// no hay forma de saber si fue un GM, cuál, ni cuándo.
+    ///
+    /// Eso importa acá más que en un server cualquiera, porque la economía de Vorthania está
+    /// calibrada con sumideros finos (ver docs/12) y un solo comando descuidado la desarma.
+    ///
+    /// Se loguea el comando CRUDO a propósito, con sus argumentos y el nombre del objetivo si lo
+    /// tiene, porque lo que se quiere reconstruir después es la frase exacta que se tipeó.
+    ///
+    /// Nivel Information: tiene que sobrevivir a la configuración de logs por defecto. Estas
+    /// líneas son pocas —solo comandos de GM— así que no ensucian.
+    /// </remarks>
+    private void LogGameMasterCommand(Player player, string command)
+    {
+        if (this.MinCharacterStatusRequirement < CharacterStatus.GameMaster)
+        {
+            return;
+        }
+
+        var character = player.SelectedCharacter;
+        player.Logger.LogInformation(
+            "[GM AUDIT] {AccountName} / {CharacterName} ejecutó: {Command}",
+            player.Account?.LoginName ?? "?",
+            character?.Name ?? "?",
+            command);
     }
 
     /// <summary>

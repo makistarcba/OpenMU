@@ -23,6 +23,18 @@ public abstract class AttackableNpcBase : NonPlayerCharacter, IAttackable
     private const byte MaximumDropDistance = 2;
     private const short IceSkillNumber = 7;
 
+    /// <summary>
+    /// VORTHANIA: segundos de estado de asesino que descuenta cada monstruo matado.
+    /// </summary>
+    /// <remarks>
+    /// Upstream descontaba el NIVEL del monstruo, o sea unos 120 segundos por bicho en las zonas de
+    /// farmeo típicas. Cada PK suma una hora, así que alcanzaban 30 kills - poco más de un minuto a
+    /// 1.500 kills por hora - para limpiarse. Con eso, ni el castigo ni el costo en zen de /pkclear
+    /// significaban nada. Con 1 segundo por kill el farmeo sigue ayudando, pero borrar una hora de PK
+    /// cuesta 3.600 monstruos, y pagar pasa a ser una alternativa real.
+    /// </remarks>
+    private const int PlayerKillerSecondsPerMonsterKill = 1;
+
     private readonly IEventStateProvider? _eventStateProvider;
     private readonly IDropGenerator _dropGenerator;
     private readonly PlugInManager _plugInManager;
@@ -363,9 +375,9 @@ public abstract class AttackableNpcBase : NonPlayerCharacter, IAttackable
             {
                 if (selectedCharacter.State > HeroState.Normal)
                 {
-                    // An outlaw can shorten its remaining state time by hunting monsters, on any map:
-                    // the level of the killed monster is subtracted in seconds.
-                    selectedCharacter.StateRemainingSeconds -= (int)this.Attributes[Stats.Level];
+                    // An outlaw can shorten its remaining state time by hunting monsters, on any map.
+                    // VORTHANIA: 1 segundo por kill, no el nivel del monstruo (ver PlayerKillerSecondsPerMonsterKill).
+                    selectedCharacter.StateRemainingSeconds -= PlayerKillerSecondsPerMonsterKill;
                 }
 
                 _ = this.DropItemDelayedAsync(player, experienceShares); // don't wait for completion.

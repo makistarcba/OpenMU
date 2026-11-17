@@ -6,6 +6,7 @@ namespace MUnique.OpenMU.GameLogic;
 
 using MUnique.OpenMU.GameLogic.PlayerActions;
 using MUnique.OpenMU.GameLogic.PlugIns;
+using MUnique.OpenMU.GameLogic.PlugIns.Vorthania;
 using MUnique.OpenMU.GameLogic.Views;
 using MUnique.OpenMU.GameLogic.Views.Character;
 using MUnique.OpenMU.GameLogic.Views.World;
@@ -147,6 +148,37 @@ internal sealed class PlayerMapTransitions
         var player = this._player;
         if (player.PlayerState.CurrentState.IsDisconnectedOrFinished() || player.SelectedCharacter is null)
         {
+            return;
+        }
+
+        // VORTHANIA: rango de resets por mapa. Este es el único punto por el que pasan todas las
+        // formas de entrar a un mapa, así que alcanza con chequear acá. Ver ResetRequirementsPlugIn.
+        // VORTHANIA: el mapa del evento LaCleon tiene su propia regla de entrada (solo por el NPC, con
+        // tiempo y nivel) y, mientras el evento está activo, no pasa por el rango de resets: así el
+        // mapa puede seguir "cerrado" con 9999 resets y vuelve a cerrarse solo si se apaga el plugin.
+        if (gate.Map is { } laCleonTargetMap
+            && player.GameContext.FeaturePlugIns.GetPlugIn<MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon.LaCleonEventPlugIn>() is { } laCleonEvent
+            && laCleonEvent.IsEventMap(laCleonTargetMap.Number))
+        {
+            if (!laCleonEvent.MayEnterMap(player, laCleonTargetMap.Number, out var laCleonMessage))
+            {
+                if (laCleonMessage is { } blockedMessage)
+                {
+                    await player.ShowBlueMessageAsync(blockedMessage).ConfigureAwait(false);
+                }
+
+                return;
+            }
+        }
+        else if (gate.Map is { } targetMap
+            && player.GameContext.FeaturePlugIns.GetPlugIn<ResetRequirementsPlugIn>() is { } resetRequirements
+            && !resetRequirements.MayEnterMap(player, targetMap.Number, out var requirementMessage))
+        {
+            if (requirementMessage is { } message)
+            {
+                await player.ShowBlueMessageAsync(message).ConfigureAwait(false);
+            }
+
             return;
         }
 

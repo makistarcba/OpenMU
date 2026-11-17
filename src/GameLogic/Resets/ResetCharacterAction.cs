@@ -1,4 +1,4 @@
-// <copyright file="ResetCharacterAction.cs" company="MUnique">
+﻿// <copyright file="ResetCharacterAction.cs" company="MUnique">
 // Licensed under the MIT License. See LICENSE file in the project root for full license information.
 // </copyright>
 
@@ -70,9 +70,14 @@ public class ResetCharacterAction
             return;
         }
 
-        if (configuration.ResetLimit > 0 && resetProgression.NextResetCount > configuration.ResetLimit)
+        // VORTHANIA: el tope sale del calendario de temporada cuando está cargado, y del ResetLimit
+        // fijo cuando no. Ver ResetProgressionCalculator.GetEffectiveResetLimit y docs/14.
+        var resetLimit = ResetProgressionCalculator.GetEffectiveResetLimit(
+            configuration,
+            DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, this._player.GameContext.ServerTimeZone)));
+        if (resetLimit > 0 && resetProgression.NextResetCount > resetLimit)
         {
-            await this.ShowMessageAsync(nameof(PlayerMessage.MaximumResetsReached), configuration.ResetLimit).ConfigureAwait(false);
+            await this.ShowMessageAsync(nameof(PlayerMessage.MaximumResetsReached), resetLimit).ConfigureAwait(false);
             return;
         }
 
@@ -87,7 +92,7 @@ public class ResetCharacterAction
         this.UpdateStats(configuration, resetProgression);
         if (configuration.MoveHome)
         {
-            await this.MoveHomeAsync().ConfigureAwait(false);
+            await this.MoveHomeAsync(configuration).ConfigureAwait(false);
         }
 
         if (configuration.LogOut)
@@ -216,16 +221,39 @@ public class ResetCharacterAction
         }
     }
 
-    private async ValueTask MoveHomeAsync()
+    /// <summary>
+    /// Moves the character to the home map of its class.
+    /// </summary>
+    /// <param name="configuration">The reset configuration.</param>
+    /// <remarks>
+    /// VORTHANIA: upstream solo escribía la posición en el registro del personaje, que es suficiente
+    /// cuando <see cref="ResetConfiguration.LogOut"/> está activo, porque la posición se aplica al
+    /// volver a entrar. Con el logout desactivado no pasaba nada: el jugador quedaba nivel 10 parado
+    /// donde estuviera farmeando, y el guardado normal le pisaba la posición escrita acá.
+    ///
+    /// <see cref="ResetStatsAction"/>, que hace lo mismo para el respec, sí llama a
+    /// <c>WarpToAsync</c>. O sea que es un descuido de upstream y no una decisión de diseño.
+    ///
+    /// El warp hace un cambio de mapa con handshake del cliente, así que solo tiene sentido si el
+    /// jugador sigue conectado. De ahí la bifurcación.
+    /// </remarks>
+    private async ValueTask MoveHomeAsync(ResetConfiguration configuration)
     {
         var homeMapDef = this._player.SelectedCharacter!.CharacterClass!.HomeMap;
         if (homeMapDef is { }
             && await this._player.GameContext.GetMapAsync((ushort)homeMapDef.Number).ConfigureAwait(false) is { SafeZoneSpawnGate: { } spawnGate })
         {
-            this._player.SelectedCharacter.PositionX = (byte)Rand.NextInt(spawnGate.X1, spawnGate.X2);
-            this._player.SelectedCharacter.PositionY = (byte)Rand.NextInt(spawnGate.Y1, spawnGate.Y2);
-            this._player.SelectedCharacter.CurrentMap = spawnGate.Map;
-            this._player.Rotation = spawnGate.Direction;
+            if (configuration.LogOut)
+            {
+                this._player.SelectedCharacter.PositionX = (byte)Rand.NextInt(spawnGate.X1, spawnGate.X2);
+                this._player.SelectedCharacter.PositionY = (byte)Rand.NextInt(spawnGate.Y1, spawnGate.Y2);
+                this._player.SelectedCharacter.CurrentMap = spawnGate.Map;
+                this._player.Rotation = spawnGate.Direction;
+            }
+            else
+            {
+                await this._player.WarpToAsync(spawnGate).ConfigureAwait(false);
+            }
         }
     }
 

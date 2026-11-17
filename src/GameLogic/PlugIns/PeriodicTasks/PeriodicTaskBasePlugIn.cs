@@ -8,6 +8,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using MUnique.OpenMU.GameLogic;
 using MUnique.OpenMU.GameLogic.PlugIns;
+using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.EventPanel;
 using MUnique.OpenMU.PlugIns;
 
 /// <summary>
@@ -15,7 +16,7 @@ using MUnique.OpenMU.PlugIns;
 /// </summary>
 /// <typeparam name="TConfiguration">Configuration type.</typeparam>
 /// <typeparam name="TState">State type.</typeparam>
-public abstract class PeriodicTaskBasePlugIn<TConfiguration, TState> : IPeriodicTaskPlugIn, ISupportCustomConfiguration<TConfiguration>, IScheduledPlugIn
+public abstract class PeriodicTaskBasePlugIn<TConfiguration, TState> : IPeriodicTaskPlugIn, ISupportCustomConfiguration<TConfiguration>, IScheduledPlugIn, IEventPanelSource
     where TConfiguration : PeriodicTaskConfiguration
     where TState : PeriodicTaskGameServerState
 {
@@ -113,6 +114,7 @@ public abstract class PeriodicTaskBasePlugIn<TConfiguration, TState> : IPeriodic
                     await this.OnPrepareEventAsync(state).ConfigureAwait(false);
                     state.State = PeriodicTaskState.Prepared;
                     await this.OnPreparedAsync(state).ConfigureAwait(false);
+                    EventPanelService.NotifyChanged(gameContext); // VORTHANIA: panel de eventos (H)
 
                     if (!string.IsNullOrWhiteSpace(state.Description))
                     {
@@ -124,11 +126,15 @@ public abstract class PeriodicTaskBasePlugIn<TConfiguration, TState> : IPeriodic
 
             case PeriodicTaskState.Prepared:
                 {
-                    state.NextRunUtc = DateTime.UtcNow.Add(configuration.TaskDuration);
+                    // VORTHANIA: ask the configuration how long *this* run lasts. With a weekly
+                    // schedule the duration differs per entry (weekdays vs weekends); without one
+                    // this returns the plain TaskDuration, exactly as upstream did.
+                    state.NextRunUtc = DateTime.UtcNow.Add(configuration.GetEffectiveTaskDuration(gameContext.ServerTimeZone));
                     state.State = PeriodicTaskState.Started;
                     state.LastRunUtc = DateTime.UtcNow;
 
                     await this.OnStartedAsync(state).ConfigureAwait(false);
+                    EventPanelService.NotifyChanged(gameContext); // VORTHANIA: panel de eventos (H)
 
                     if (!string.IsNullOrWhiteSpace(state.Description))
                     {
@@ -143,6 +149,7 @@ public abstract class PeriodicTaskBasePlugIn<TConfiguration, TState> : IPeriodic
                     state.State = PeriodicTaskState.NotStarted;
 
                     await this.OnFinishedAsync(state).ConfigureAwait(false);
+                    EventPanelService.NotifyChanged(gameContext); // VORTHANIA: panel de eventos (H)
 
                     if (!string.IsNullOrWhiteSpace(state.Description))
                     {
@@ -168,6 +175,53 @@ public abstract class PeriodicTaskBasePlugIn<TConfiguration, TState> : IPeriodic
         return gameContext is not IGameServerContext serverContext
             || this.Configuration?.IsEnabledOnServer(serverContext.Id) != false;
     }
+
+    /// <summary>
+    /// VORTHANIA: Describes this event for the event panel (key H of the Vorthania client).
+    /// </summary>
+    /// <param name="gameContext">The game context.</param>
+    /// <returns>The line of the panel, or <c>null</c> if this task isn't an event of the panel.</returns>
+    public virtual EventPanelEntry? GetEventPanelEntry(IGameContext gameContext)
+    {
+        if (EventPanelNames.Get(this.GetType()) is not { } naming)
+        {
+            return null;
+        }
+
+        var state = this.GetStateByGameContext(gameContext);
+        DateTime? startUtc;
+        DateTime? endUtc = null;
+        EventPanelEntryState panelState;
+        switch (state.State)
+        {
+            case PeriodicTaskState.Prepared:
+                panelState = EventPanelEntryState.Starting;
+                startUtc = state.NextRunUtc;
+                break;
+            case PeriodicTaskState.Started:
+                panelState = EventPanelEntryState.Running;
+                startUtc = state.LastRunUtc;
+                endUtc = state.NextRunUtc;
+                break;
+            default:
+                startUtc = this.Configuration?.GetNextStartUtc(gameContext.ServerTimeZone);
+                panelState = startUtc is null ? EventPanelEntryState.NoSchedule : EventPanelEntryState.Scheduled;
+                break;
+        }
+
+        var monsters = panelState == EventPanelEntryState.Running
+            ? this.GetEventPanelMonsters(state)
+            : Array.Empty<EventPanelMonsterGroup>();
+        return new EventPanelEntry(naming.Name, naming.Kind, panelState, startUtc, endUtc, monsters);
+    }
+
+    /// <summary>
+    /// VORTHANIA: Gets the monsters of a running event for the event panel. None by default.
+    /// </summary>
+    /// <param name="state">The state of the running event.</param>
+    /// <returns>The monster groups.</returns>
+    protected virtual IReadOnlyList<EventPanelMonsterGroup> GetEventPanelMonsters(TState state)
+        => Array.Empty<EventPanelMonsterGroup>();
 
     /// <summary>
     /// Gets a value indicating whether the start condition of the task is met: a pending

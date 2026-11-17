@@ -6,8 +6,10 @@ namespace MUnique.OpenMU.GameLogic.PlugIns.InvasionEvents;
 
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
 using MUnique.OpenMU.GameLogic.NPC;
 using MUnique.OpenMU.GameLogic.PlugIns.PeriodicTasks;
+using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.EventPanel;
 
 /// <summary>
 /// Invasion state that is created for every periodic invasion run.
@@ -18,6 +20,10 @@ public class InvasionGameServerState : PeriodicTaskGameServerState
     private readonly Dictionary<ushort, ushort> _selectedMaps = [];
     private readonly List<ushort> _announcedMapIds = [];
     private readonly ConcurrentDictionary<Monster, byte> _monsters = new();
+
+    // VORTHANIA: cuántos bichos de cada tipo salieron en cada mapa y cuántos siguen vivos, para el
+    // panel de eventos (H). Se limpia en Reset(), o sea cuando termina la invasión.
+    private readonly ConcurrentDictionary<(short MonsterNumber, ushort MapId), MonsterTally> _tallies = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InvasionGameServerState"/> class.
@@ -91,6 +97,20 @@ public class InvasionGameServerState : PeriodicTaskGameServerState
         this._mapIds.Clear();
         this._selectedMaps.Clear();
         this._announcedMapIds.Clear();
+        this._tallies.Clear();
+    }
+
+    /// <summary>
+    /// VORTHANIA: Gets how many monsters of each kind were spawned on each map and how many are still alive.
+    /// </summary>
+    /// <returns>The monster groups, sorted by map and monster name.</returns>
+    internal IReadOnlyList<EventPanelMonsterGroup> GetMonsterGroups()
+    {
+        return this._tallies.Values
+            .Select(t => new EventPanelMonsterGroup(t.MonsterName, t.MapName, Math.Max(0, t.Alive), t.Total))
+            .OrderBy(g => g.MapName, StringComparer.Ordinal)
+            .ThenBy(g => g.MonsterName, StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>
@@ -102,6 +122,12 @@ public class InvasionGameServerState : PeriodicTaskGameServerState
         if (this._monsters.TryAdd(monster, 0))
         {
             monster.Died += this.OnMonsterDied;
+
+            // VORTHANIA: panel de eventos (H).
+            var tally = this._tallies.GetOrAdd(
+                (monster.Definition.Number, monster.CurrentMap.MapId),
+                _ => new MonsterTally(monster.Definition.Designation.ValueInNeutralLanguage, monster.CurrentMap.Definition.Name.ValueInNeutralLanguage));
+            tally.Spawned();
         }
     }
 
@@ -137,6 +163,45 @@ public class InvasionGameServerState : PeriodicTaskGameServerState
         {
             this._monsters.TryRemove(monster, out _);
             monster.Died -= this.OnMonsterDied;
+
+            // VORTHANIA: panel de eventos (H).
+            if (this._tallies.TryGetValue((monster.Definition.Number, monster.CurrentMap.MapId), out var tally))
+            {
+                tally.Died();
+            }
+
+            EventPanelService.NotifyChanged(this.Context);
         }
+    }
+
+    /// <summary>
+    /// VORTHANIA: Counts the monsters of one kind on one map.
+    /// </summary>
+    private sealed class MonsterTally
+    {
+        private int _alive;
+        private int _total;
+
+        public MonsterTally(string monsterName, string mapName)
+        {
+            this.MonsterName = monsterName;
+            this.MapName = mapName;
+        }
+
+        public string MonsterName { get; }
+
+        public string MapName { get; }
+
+        public int Alive => Volatile.Read(ref this._alive);
+
+        public int Total => Volatile.Read(ref this._total);
+
+        public void Spawned()
+        {
+            Interlocked.Increment(ref this._total);
+            Interlocked.Increment(ref this._alive);
+        }
+
+        public void Died() => Interlocked.Decrement(ref this._alive);
     }
 }

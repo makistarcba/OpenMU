@@ -28,6 +28,19 @@ public class CharacterQuestState
     public virtual QuestDefinition? LastFinishedQuest { get; set; }
 
     /// <summary>
+    /// VORTHANIA: Gets or sets when the last quest of this group was finished, in UTC.
+    /// </summary>
+    /// <remarks>
+    /// Es lo único que hacía falta para que existan las diarias y las semanales: upstream no guarda
+    /// en ningún lado CUÁNDO se terminó una quest, así que no había forma de saber si la de hoy ya
+    /// estaba hecha.
+    ///
+    /// Se guarda en UTC y se convierte con la zona horaria del servidor al comparar, por la misma
+    /// razón que el calendario del Happy Hour: la base no tiene que saber de husos.
+    /// </remarks>
+    public DateTime? LastFinishedUtc { get; set; }
+
+    /// <summary>
     /// Gets or sets the active quest.
     /// </summary>
     public virtual QuestDefinition? ActiveQuest { get; set; }

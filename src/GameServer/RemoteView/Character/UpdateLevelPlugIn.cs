@@ -42,7 +42,8 @@ public class UpdateLevelPlugIn : IUpdateLevelPlugIn
 
         await connection.SendCharacterLevelUpdateAsync(
             (ushort)charStats[Stats.Level],
-            (ushort)Math.Max(selectedCharacter.LevelUpPoints, 0),
+            // VORTHANIA: Clamp y no Math.Max: LevelUpPoints pasa los 65.535 (600 puntos por reset) y el protocolo es ushort; sin el tope daba la vuelta.
+            (ushort)Math.Clamp(selectedCharacter.LevelUpPoints, 0, ushort.MaxValue),
             charStats[Stats.MaximumHealth].ToUInt16Clamped(),
             charStats[Stats.MaximumMana].ToUInt16Clamped(),
             charStats[Stats.MaximumShield].ToUInt16Clamped(),

@@ -65,6 +65,11 @@ public static class PlayerQuestExtensions
                    .Where(q => q.MinimumCharacterLevel <= player.Level
                                && (q.MaximumCharacterLevel == default || q.MaximumCharacterLevel >= player.Level))
                    .Where(q => !q.EvolvesIntoInactiveClass(player))
+
+                   // VORTHANIA: los dos filtros nuevos. Van acá además de en QuestStartAction para
+                   // que el NPC no ofrezca algo que después el server va a rechazar.
+                   .Where(q => q.IsResetRangeFulfilled(player))
+                   .Where(q => q.IsPeriodElapsed(player.GetQuestState(q.Group), player.GameContext.ServerTimeZone))
                ?? Enumerable.Empty<QuestDefinition>();
     }
 

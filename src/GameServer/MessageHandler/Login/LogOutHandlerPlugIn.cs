@@ -32,6 +32,7 @@ public class LogOutHandlerPlugIn : ISubPacketHandlerPlugIn
     public async ValueTask HandlePacketAsync(Player player, Memory<byte> packet)
     {
         LogOut message = packet;
-        await this._logoutAction.LogoutAsync(player, (LogoutType)message.Type).ConfigureAwait(false);
+        // VORTHANIA: countdown of 5 seconds, and no logout while the player's self-defense (as attacker) is active.
+        await this._logoutAction.RequestLogoutAsync(player, (LogoutType)message.Type).ConfigureAwait(false);
     }
 }

@@ -1,4 +1,4 @@
-// <copyright file="ResetProgressionCalculator.cs" company="MUnique">
+﻿// <copyright file="ResetProgressionCalculator.cs" company="MUnique">
 // Licensed under the MIT License. See LICENSE file in the project root for full license information.
 // </copyright>
 
@@ -30,6 +30,35 @@ public static class ResetProgressionCalculator
         var requiredItemAmount = GetRequiredItemAmount(configuration, nextResetCount);
 
         return new ResetProgression(nextResetCount, requiredZen, requiredItemAmount, pointsForReset, totalPointsAfterReset);
+    }
+
+    /// <summary>
+    /// Gets the reset limit which is effective at the specified date.
+    /// </summary>
+    /// <param name="configuration">The reset configuration.</param>
+    /// <param name="today">The current date, in the time zone of the server.</param>
+    /// <returns>The effective reset limit. Zero means that there is no limit.</returns>
+    /// <remarks>
+    /// VORTHANIA: el tope de resets de la temporada. Si hay calendario y fecha de apertura, gana la
+    /// fila con la semana más alta que ya haya empezado; si no, gana el ResetLimit fijo de siempre.
+    /// Se calcula en cada reset, así que la progresión avanza sola. Ver docs/12 y docs/14.
+    /// </remarks>
+    public static int GetEffectiveResetLimit(ResetConfiguration configuration, DateOnly today)
+    {
+        if (configuration.ResetLimitSchedule.Count == 0 || configuration.SeasonStart == default)
+        {
+            return Math.Max(0, configuration.ResetLimit ?? 0);
+        }
+
+        var daysSinceStart = today.DayNumber - configuration.SeasonStart.DayNumber;
+        var week = daysSinceStart < 0 ? 1 : (daysSinceStart / 7) + 1;
+
+        if (GetMatchingTier(configuration.ResetLimitSchedule, week, tier => tier.FromWeek) is not { } tier)
+        {
+            return Math.Max(0, configuration.ResetLimit ?? 0);
+        }
+
+        return Math.Max(0, tier.ResetLimit);
     }
 
     private static int GetPointsForReset(ResetConfiguration configuration, int pointsPerResetOverride, int nextResetCount)

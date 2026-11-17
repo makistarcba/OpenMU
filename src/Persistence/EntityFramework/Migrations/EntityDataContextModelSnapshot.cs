@@ -1250,6 +1250,9 @@ namespace MUnique.OpenMU.Persistence.EntityFramework.Migrations
                     b.Property<Guid?>("LastFinishedQuestId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("LastFinishedUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ActiveQuestId");
@@ -4100,7 +4103,13 @@ namespace MUnique.OpenMU.Persistence.EntityFramework.Migrations
                     b.Property<int>("MaximumCharacterLevel")
                         .HasColumnType("integer");
 
+                    b.Property<int>("MaximumResets")
+                        .HasColumnType("integer");
+
                     b.Property<int>("MinimumCharacterLevel")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinimumResets")
                         .HasColumnType("integer");
 
                     b.Property<Guid?>("MonsterDefinitionId")
@@ -4112,6 +4121,9 @@ namespace MUnique.OpenMU.Persistence.EntityFramework.Migrations
 
                     b.Property<short>("Number")
                         .HasColumnType("smallint");
+
+                    b.Property<int>("Period")
+                        .HasColumnType("integer");
 
                     b.Property<Guid?>("QualifiedCharacterId")
                         .HasColumnType("uuid");

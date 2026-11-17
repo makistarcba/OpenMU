@@ -19,6 +19,16 @@ using Nito.AsyncEx;
 /// </summary>
 public sealed class Party : AsyncDisposable
 {
+    /// <summary>
+    /// VORTHANIA: The experience bonus granted by the second party member.
+    /// </summary>
+    private const double FirstPartnerBonus = 0.10;
+
+    /// <summary>
+    /// VORTHANIA: The experience bonus granted by every party member beyond the second.
+    /// </summary>
+    private const double AdditionalMemberBonus = 0.05;
+
     private static readonly Meter Meter = new(MeterName);
     private static readonly Counter<int> PartyCount = Meter.CreateCounter<int>("PartyCount");
 
@@ -379,6 +389,30 @@ public sealed class Party : AsyncDisposable
         base.Dispose(disposing);
     }
 
+    /// <summary>
+    /// VORTHANIA: The experience bonus for playing in a party, by member count.
+    /// </summary>
+    /// <param name="memberCount">The amount of party members which receive experience.</param>
+    /// <returns>The multiplier applied to the party's experience.</returns>
+    /// <remarks>
+    /// Upstream OpenMU uses Math.Pow(1.05, memberCount - 1), which compounds and therefore gives
+    /// the smallest reward to the hardest step: finding the first person to play with. This curve
+    /// front-loads it instead - the second member is worth 10%, and every further member 5% more -
+    /// and it does not care which classes are in the party, so nobody is left out for playing the
+    /// "wrong" character.
+    ///
+    ///   2 members: 1.10  |  3: 1.15  |  4: 1.20  |  5: 1.25.
+    /// </remarks>
+    private static double GetPartyBonusMultiplier(int memberCount)
+    {
+        if (memberCount < 2)
+        {
+            return 1.0;
+        }
+
+        return 1.0 + (FirstPartnerBonus + (AdditionalMemberBonus * (memberCount - 2)));
+    }
+
     private static float CalculatePartyExperiencePerLevel(List<Player> recipients, IAttackable killed)
     {
         var memberCount = recipients.Count;
@@ -386,7 +420,7 @@ public sealed class Party : AsyncDisposable
         var averageLevel = totalLevel / memberCount;
         var baseExperience = killed.CalculateBaseExperience(averageLevel);
 
-        var partyBonusMultiplier = Math.Pow(1.05, memberCount - 1);
+        var partyBonusMultiplier = GetPartyBonusMultiplier(memberCount);
         var mapExperienceMultiplier = killed.CurrentMap?.Definition.ExpMultiplier ?? 1;
         var totalBaseExperience = baseExperience * memberCount * partyBonusMultiplier * mapExperienceMultiplier;
 
@@ -434,6 +468,8 @@ public sealed class Party : AsyncDisposable
             return exp;
         }
 
+        // VORTHANIA: el paso de la XP de party por los plugins (rate dinamico) ya lo hace upstream
+        // desde el 05/11/2026 (ApplyExperienceCalculationPlugInsAsync); se usa el suyo.
         // The share is weighted by the total level, because the experience per level is calculated
         // by the sum of the total levels. Otherwise, a member with master levels which is still below
         // the maximum level (e.g. after a reset) would lose the share of its master levels.

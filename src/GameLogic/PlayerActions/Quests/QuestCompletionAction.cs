@@ -75,6 +75,10 @@ public class QuestCompletionAction
         }
 
         questState!.LastFinishedQuest = activeQuest;
+
+        // VORTHANIA: sin esto no existen las diarias ni las semanales. Se guarda en UTC; la
+        // conversión a hora del servidor pasa al comparar, en QuestAvailabilityExtensions.
+        questState.LastFinishedUtc = DateTime.UtcNow;
         foreach (var requiredItem in activeQuest.RequiredItems)
         {
             var requiredLevel = requiredItem.DropItemGroup?.ItemLevel;

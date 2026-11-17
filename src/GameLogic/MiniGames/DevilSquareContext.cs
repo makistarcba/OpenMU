@@ -79,6 +79,12 @@ public sealed class DevilSquareContext : MiniGameContext
 
         this._highScoreTable = scoreList.AsReadOnly();
 
+        // VORTHANIA: todos los que llegan vivos al final ganan tiempo de LaCleon.
+        foreach (var survivor in finishers.Where(f => f.IsAlive && f.CurrentMap == this.Map).ToList())
+        {
+            await MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon.LaCleonEventPlugIn.RewardAsync(survivor, MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon.LaCleonRewardSource.DevilSquare).ConfigureAwait(false);
+        }
+
         await this.SaveRankingAsync(sortedFinishers.Select(state => (state.Rank, state.Player.SelectedCharacter!, state.Score))).ConfigureAwait(false);
         await base.GameEndedAsync(finishers).ConfigureAwait(false);
     }

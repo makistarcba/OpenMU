@@ -7,6 +7,7 @@ namespace MUnique.OpenMU.GameLogic.PlugIns.InvasionEvents;
 using Microsoft.Extensions.Logging;
 using MUnique.OpenMU.GameLogic.NPC;
 using MUnique.OpenMU.GameLogic.PlugIns.PeriodicTasks;
+using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.EventPanel;
 using MUnique.OpenMU.GameLogic.Properties;
 using MUnique.OpenMU.GameLogic.Views;
 using MUnique.OpenMU.Interfaces;
@@ -273,6 +274,14 @@ public abstract class BaseInvasionPlugIn<TConfiguration> : PeriodicTaskBasePlugI
         await state.CleanUpMonstersAsync().ConfigureAwait(false);
         state.Reset();
     }
+
+    /// <summary>
+    /// VORTHANIA: The monsters of the running invasion, for the event panel (key H).
+    /// </summary>
+    /// <param name="state">The state of the running invasion.</param>
+    /// <returns>The monster groups.</returns>
+    protected override IReadOnlyList<EventPanelMonsterGroup> GetEventPanelMonsters(InvasionGameServerState state)
+        => state.GetMonsterGroups();
 
     /// <summary>
     /// Spawns mobs on the maps that were selected during <see cref="OnPrepareEventAsync"/>.

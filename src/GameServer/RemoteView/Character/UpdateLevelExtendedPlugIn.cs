@@ -44,7 +44,9 @@ public class UpdateLevelExtendedPlugIn : IUpdateLevelPlugIn
 
         await connection.SendCharacterLevelUpdateExtendedAsync(
             (ushort)charStats[Stats.Level],
-            (ushort)Math.Max(selectedCharacter.LevelUpPoints, 0),
+
+            // VORTHANIA: ver UpdateCharacterStatsPlugIn.
+            (ushort)Math.Clamp(selectedCharacter.LevelUpPoints, 0, ushort.MaxValue),
             (uint)charStats[Stats.MaximumHealth],
             (uint)charStats[Stats.MaximumMana],
             (uint)charStats[Stats.MaximumShield],

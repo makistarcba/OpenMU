@@ -55,6 +55,21 @@ public partial class QuestDefinition
     public bool Repeatable { get; set; }
 
     /// <summary>
+    /// VORTHANIA: Gets or sets how often a completed quest becomes available again.
+    /// </summary>
+    /// <remarks>
+    /// Cuando no es <see cref="QuestPeriod.None"/>, el período MANDA por encima de
+    /// <see cref="Repeatable"/>: la quest se puede volver a hacer, pero recién después del corte.
+    /// El corte se calcula contra <c>CharacterQuestState.LastFinishedUtc</c> usando la zona horaria
+    /// del servidor.
+    ///
+    /// Ojo con los grupos: <c>CharacterQuestState</c> es uno por grupo y guarda una sola fecha, así
+    /// que **cada quest con período necesita su propio grupo**. Dos diarias en el mismo grupo
+    /// comparten el reloj y se pisan.
+    /// </remarks>
+    public QuestPeriod Period { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether this quest requires a client action.
     /// </summary>
     public bool RequiresClientAction { get; set; }
@@ -74,6 +89,23 @@ public partial class QuestDefinition
     /// Gets or sets the maximum character level.
     /// </summary>
     public int MaximumCharacterLevel { get; set; }
+
+    /// <summary>
+    /// VORTHANIA: Gets or sets the minimum reset count of the character.
+    /// </summary>
+    /// <remarks>
+    /// Upstream solo tiene <see cref="MinimumCharacterLevel"/>, y como un reset devuelve el
+    /// personaje al nivel 1, el nivel NO puede expresar "esto se desbloquea en el reset 60".
+    /// Este es el gate que necesitan las cadenas por tramo (ver docs/10).
+    ///
+    /// 0 significa sin mínimo.
+    /// </remarks>
+    public int MinimumResets { get; set; }
+
+    /// <summary>
+    /// VORTHANIA: Gets or sets the maximum reset count of the character. 0 means no maximum.
+    /// </summary>
+    public int MaximumResets { get; set; }
 
     /// <summary>
     /// Gets or sets the qualified character class. If <c>null</c>, it's valid for all character classes.
