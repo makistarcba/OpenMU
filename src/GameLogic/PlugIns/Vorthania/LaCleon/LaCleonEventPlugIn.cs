@@ -145,26 +145,37 @@ public class LaCleonEventPlugIn
     }
 
     /// <inheritdoc />
-    public async ValueTask PlayerTalksToNpcAsync(Player player, NonPlayerCharacter npc, NpcTalkEventArgs eventArgs)
+    public ValueTask PlayerTalksToNpcAsync(Player player, NonPlayerCharacter npc, NpcTalkEventArgs eventArgs)
     {
         if (npc.Definition.Number != this.Config.NpcNumber)
         {
-            return;
+            return ValueTask.CompletedTask;
         }
 
-        // Tiene que quedar marcado antes del primer await: TalkNpcAction no espera a este método.
         eventArgs.HasBeenHandled = true;
 
-        try
+        // VORTHANIA 17/11: la entrada corre aparte. TalkNpcAction deja al jugador en "diálogo abierto"
+        // y recién lo devuelve al estado normal DESPUÉS de este método (el OpenMU nuevo lo espera con
+        // await; el viejo no). Moverlo de mapa antes rompe el estado, y antes de este arreglo la entrada
+        // se cortaba sin ningún mensaje ("clic y no pasa nada").
+        _ = Task.Run(async () =>
         {
-            // Deja que TalkNpcAction devuelva al jugador al estado normal antes de moverlo de mapa.
-            await Task.Delay(300).ConfigureAwait(false);
-            await this.TryEnterAsync(player).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            player.Logger.LogWarning(ex, "LaCleon: falló la entrada por el NPC.");
-        }
+            try
+            {
+                for (var i = 0; i < 30 && player.PlayerState.CurrentState == PlayerState.NpcDialogOpened; i++)
+                {
+                    await Task.Delay(100).ConfigureAwait(false);
+                }
+
+                await this.TryEnterAsync(player).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                player.Logger.LogWarning(ex, "LaCleon: falló la entrada por el NPC.");
+            }
+        });
+
+        return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -323,9 +334,16 @@ public class LaCleonEventPlugIn
         var config = this.Config;
         if (player.SelectedCharacter is null
             || !player.IsAlive
-            || player.PlayerState.CurrentState != PlayerState.EnteredWorld
             || player.Account?.LoginName is not { } loginName)
         {
+            return;
+        }
+
+        if (player.PlayerState.CurrentState != PlayerState.EnteredWorld)
+        {
+            // Antes se cortaba en silencio; si vuelve a pasar, que quede a la vista.
+            player.Logger.LogInformation("LaCleon: entrada cancelada, el jugador está en el estado {State}.", player.PlayerState.CurrentState);
+            await player.ShowBlueMessageAsync("LaCleon: no se pudo entrar ahora, hablale de nuevo a la Fireworks Girl.").ConfigureAwait(false);
             return;
         }
 
