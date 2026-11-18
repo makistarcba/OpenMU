@@ -5,6 +5,7 @@
 namespace MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon;
 
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using MUnique.OpenMU.GameLogic.Attributes;
 using MUnique.OpenMU.GameLogic.NPC;
@@ -37,6 +38,7 @@ public class LaCleonEventPlugIn
       IPeriodicTaskPlugIn,
       IAttackableGotKilledPlugIn,
       IPlayerTalkToNpcPlugIn,
+      IWarpGateEnteringPlugIn,
       ISupportCustomConfiguration<LaCleonEventConfiguration>,
       ISupportDefaultCustomConfiguration
 {
@@ -95,6 +97,30 @@ public class LaCleonEventPlugIn
     /// <param name="mapNumber">The number of the map.</param>
     /// <returns><c>true</c> when players can't attack each other there.</returns>
     public bool IsPvpBlocked(short mapNumber) => this.Config.BlockPvp && this.IsEventMap(mapNumber);
+
+    /// <summary>
+    /// VORTHANIA 18/11: corta los portales (como el de Devias 2) y la lista de warp hacia el mapa del evento.
+    /// Cancelado acá, el OpenMU nuevo deja al jugador donde está y le cierra la pantalla de carga; el
+    /// corte de <c>PlayerMapTransitions.WarpToAsync</c> llega tarde para un portal y la pantalla quedaba negra.
+    /// </summary>
+    /// <param name="player">The player.</param>
+    /// <param name="targetGate">The target gate.</param>
+    /// <param name="eventArgs">The event args.</param>
+    public async ValueTask WarpGateEnteringAsync(Player player, ExitGate targetGate, CancelEventArgs eventArgs)
+    {
+        if (eventArgs.Cancel
+            || targetGate.Map is not { } map
+            || this.MayEnterMap(player, map.Number, out var message))
+        {
+            return;
+        }
+
+        eventArgs.Cancel = true;
+        if (message is { })
+        {
+            await player.ShowBlueMessageAsync(message).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>
     /// Determines whether the player is allowed to be moved to the specified map.

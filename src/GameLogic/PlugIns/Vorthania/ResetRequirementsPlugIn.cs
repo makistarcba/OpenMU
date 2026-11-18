@@ -4,6 +4,7 @@
 
 namespace MUnique.OpenMU.GameLogic.PlugIns.Vorthania;
 
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using MUnique.OpenMU.DataModel.Composition;
 using MUnique.OpenMU.GameLogic.Attributes;
@@ -31,6 +32,7 @@ using MUnique.OpenMU.PlugIns;
 [Guid("C4E9B1A7-2F85-4D63-9A0E-7B31C5D8F206")]
 public class ResetRequirementsPlugIn
     : IFeaturePlugIn,
+      IWarpGateEnteringPlugIn,
       ISupportCustomConfiguration<ResetRequirementsPlugIn.ResetRequirementsConfiguration>,
       ISupportDefaultCustomConfiguration
 {
@@ -89,6 +91,38 @@ public class ResetRequirementsPlugIn
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// VORTHANIA 18/11: el rango de resets tambien corta los portales y la lista de warp ANTES del cambio de
+    /// mapa. Cancelado aca, el OpenMU nuevo deja al jugador donde esta y le cierra la pantalla de carga; el
+    /// corte de <c>PlayerMapTransitions.WarpToAsync</c> llega tarde para un portal y la pantalla quedaba negra.
+    /// El mapa del evento LaCleon tiene su propia regla mientras ese plugin esta activo.
+    /// </summary>
+    /// <param name="player">The player.</param>
+    /// <param name="targetGate">The target gate.</param>
+    /// <param name="eventArgs">The event args.</param>
+    public async ValueTask WarpGateEnteringAsync(Player player, ExitGate targetGate, CancelEventArgs eventArgs)
+    {
+        if (eventArgs.Cancel || targetGate.Map is not { } map)
+        {
+            return;
+        }
+
+        if (player.GameContext.FeaturePlugIns.GetPlugIn<LaCleon.LaCleonEventPlugIn>() is { } laCleonEvent
+            && laCleonEvent.IsEventMap(map.Number))
+        {
+            return;
+        }
+
+        if (!this.MayEnterMap(player, map.Number, out var message))
+        {
+            eventArgs.Cancel = true;
+            if (message is { })
+            {
+                await player.ShowBlueMessageAsync(message).ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>
