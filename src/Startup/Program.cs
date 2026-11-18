@@ -738,6 +738,20 @@ internal sealed class Program : IDisposable
         var contextProvider = new PersistenceContextProvider(loggerFactory, changeListener);
         if (reinit || !await contextProvider.DatabaseExistsAsync().ConfigureAwait(false))
         {
+            // VORTHANIA 18/11: never drop the database because of a failed existence check.
+            // DatabaseExistsAsync returns false on ANY exception, e.g. a timeout while postgres is stuck or
+            // was just killed by the OOM killer; upstream then dropped and recreated the production database.
+            // Without an explicit -reinit, the startup is aborted instead (docker restarts the container and
+            // it retries). A first installation on an empty server needs VORTHANIA_ALLOW_DB_INIT=1.
+            if (!reinit && Environment.GetEnvironmentVariable("VORTHANIA_ALLOW_DB_INIT") != "1")
+            {
+                var canConnect = await contextProvider.CanConnectToDatabaseAsync().ConfigureAwait(false);
+                this._logger.Fatal(
+                    "VORTHANIA: the database looks missing or unreadable (can connect: {CanConnect}). It is NOT re-initialized; aborting the startup. Use -reinit or VORTHANIA_ALLOW_DB_INIT=1 only for a first installation.",
+                    canConnect);
+                throw new InvalidOperationException("VORTHANIA: the database could not be verified, refusing to re-initialize it.");
+            }
+
             // The database can be provisioned externally (e.g. by a Kubernetes operator,
             // infrastructure-as-code, or a managed cloud database), where the connecting role is
             // typically not permitted to create or drop databases. Enabling
