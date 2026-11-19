@@ -11,11 +11,16 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
     using MUnique.OpenMU.DataModel.Entities;
     using MUnique.OpenMU.GameLogic;
     using MUnique.OpenMU.GameLogic.Attributes;
+    using MUnique.OpenMU.GameLogic.PlugIns;
+    using MUnique.OpenMU.GameLogic.PlugIns.PeriodicTasks;
+    using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.EventPanel;
+    using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon;
     using MUnique.OpenMU.GameLogic.Views.Character;
     using MUnique.OpenMU.GameLogic.Views.Inventory;
     using MUnique.OpenMU.GameServer;
     using MUnique.OpenMU.Interfaces;
     using MUnique.OpenMU.Persistence;
+    using MUnique.OpenMU.PlugIns;
     using MUnique.OpenMU.Web.AdminPanel.Auth;
 
     /// <summary>
@@ -39,7 +44,7 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
         /// <summary>
         /// La version del puente. El editor la muestra, y sirve para saber que build corre.
         /// </summary>
-        private const string BridgeVersion = "vorthania-bridge-4";
+        private const string BridgeVersion = "vorthania-bridge-5";
 
         private readonly IDictionary<int, IGameServer> _gameServers;
         private readonly IDataSource<GameConfiguration> _configDataSource;
@@ -655,6 +660,280 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
             return this.Ok(new { slot = newItem.ItemSlot });
         }
 
+        /// <summary>
+        /// Changes the respawn time and the attributes of a monster. The game applies it without a restart.
+        /// </summary>
+        /// <param name="request">The request. Values which are not set stay as they are.</param>
+        /// <returns>The result.</returns>
+        /// <remarks>
+        /// Se guarda por el mismo contexto que el editor de mapas del panel: MonsterDefinition y
+        /// MonsterAttribute estan en el esquema config, asi que el cambio se publica, la copia que usa
+        /// el juego se actualiza y los monstruos ya puestos recargan sus atributos (MapInitializer).
+        /// El tiempo de reaparicion se lee cada vez que un monstruo muere: vale desde la proxima muerte.
+        /// </remarks>
+        [HttpPost]
+        [Route("monster/save")]
+        public async Task<IActionResult> SaveMonsterAsync([FromBody] MonsterRequest request)
+        {
+            if (request is null)
+            {
+                return this.BadRequest("Falta el cuerpo del pedido.");
+            }
+
+            try
+            {
+                var context = await this._configDataSource.GetContextAsync().ConfigureAwait(false);
+                var config = await this._configDataSource.GetOwnerAsync().ConfigureAwait(false);
+                var monster = config.Monsters.FirstOrDefault(m => m.GetId() == request.Id);
+                if (monster is null)
+                {
+                    return this.NotFound("No existe ese monstruo.");
+                }
+
+                var changed = new List<string>();
+                if (request.RespawnSeconds is { } seconds)
+                {
+                    if (seconds < 1 || seconds > 86400)
+                    {
+                        return this.BadRequest("La reaparicion tiene que estar entre 1 segundo y 24 horas.");
+                    }
+
+                    monster.RespawnDelay = TimeSpan.FromSeconds(seconds);
+                    changed.Add($"reaparece {seconds} s");
+                }
+
+                foreach (var requested in request.Attributes ?? new List<MonsterAttributeRequest>())
+                {
+                    var attribute = monster.Attributes.FirstOrDefault(a => a.AttributeDefinition?.Designation == requested.Name);
+                    if (attribute is null)
+                    {
+                        return this.BadRequest($"{(string)monster.Designation} no tiene el atributo '{requested.Name}'.");
+                    }
+
+                    if (Math.Abs(attribute.Value - requested.Value) > 0.0001f)
+                    {
+                        attribute.Value = requested.Value;
+                        changed.Add($"{requested.Name} = {requested.Value}");
+                    }
+                }
+
+                if (changed.Count == 0)
+                {
+                    return this.Ok(new { saved = false });
+                }
+
+                await context.SaveChangesAsync().ConfigureAwait(false);
+
+                // Por si la copia del juego no es la misma instancia que la del panel: que el cambio
+                // llegue igual a los monstruos ya puestos.
+                foreach (var server in this._gameServers.Values.OfType<GameServer>())
+                {
+                    var inGame = server.Context.Configuration.Monsters.FirstOrDefault(m => m.GetId() == request.Id);
+                    if (inGame is null || ReferenceEquals(inGame, monster))
+                    {
+                        continue;
+                    }
+
+                    inGame.RespawnDelay = monster.RespawnDelay;
+                    foreach (var attribute in monster.Attributes)
+                    {
+                        if (inGame.Attributes.FirstOrDefault(a => a.AttributeDefinition?.Designation == attribute.AttributeDefinition?.Designation) is { } target)
+                        {
+                            target.Value = attribute.Value;
+                        }
+                    }
+
+                    await this._changeMediator.HandleConfigurationChangedAsync(typeof(MonsterDefinition), inGame.GetId(), inGame).ConfigureAwait(false);
+                }
+
+                this._logger.LogWarning("[EDITOR BRIDGE] monstruo {Monster}: {Changes}", (string)monster.Designation, string.Join("; ", changed));
+                return this.Ok(new { saved = true });
+            }
+            catch (Exception ex)
+            {
+                this._logger.LogError(ex, "[EDITOR BRIDGE] no se pudo guardar el monstruo {Id}", request.Id);
+                return this.StatusCode(500, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Gets the events (invasions, mini games, Happy Hour, LaCleon) and whether they are switched on.
+        /// </summary>
+        /// <returns>The events.</returns>
+        [HttpGet]
+        [Route("events")]
+        public IActionResult GetEvents()
+        {
+            if (this._gameServers.Values.OfType<GameServer>().FirstOrDefault() is not { } server)
+            {
+                return this.NotFound("No hay un servidor de juego levantado.");
+            }
+
+            var manager = server.Context.PlugInManager;
+            var active = manager.GetActivePlugInsOf<IPeriodicTaskPlugIn>().ToList();
+            var result = new List<object>();
+            foreach (var type in EventTypes(manager))
+            {
+                var instance = active.FirstOrDefault(p => p.GetType() == type);
+                DateTime? next = null;
+                try
+                {
+                    next = (instance as IScheduledPlugIn)?.GetNextStartUtc(DateTime.UtcNow, TimeZoneInfo.Local);
+                }
+                catch (Exception ex)
+                {
+                    this._logger.LogDebug(ex, "No se pudo calcular el proximo inicio de {Type}", type.Name);
+                }
+
+                result.Add(new
+                {
+                    id = type.GUID,
+                    name = EventName(type),
+                    active = manager.IsPlugInActive(type),
+                    canStart = typeof(IPeriodicTaskPlugIn).IsAssignableFrom(type),
+                    nextStartUtc = next,
+                });
+            }
+
+            return this.Ok(result);
+        }
+
+        /// <summary>
+        /// Switches an event on or off. It is saved, so it stays like that after a restart.
+        /// </summary>
+        /// <param name="request">The request.</param>
+        /// <returns>Whether the event is active now.</returns>
+        /// <remarks>
+        /// Apagar no corta un evento que ya esta en marcha: evita los proximos.
+        /// </remarks>
+        [HttpPost]
+        [Route("events/active")]
+        public async Task<IActionResult> SetEventActiveAsync([FromBody] EventActiveRequest request)
+        {
+            if (request is null)
+            {
+                return this.BadRequest("Falta el cuerpo del pedido.");
+            }
+
+            try
+            {
+                var servers = this._gameServers.Values.OfType<GameServer>().ToList();
+                if (servers.FirstOrDefault() is not { } first
+                    || EventTypes(first.Context.PlugInManager).FirstOrDefault(t => t.GUID == request.Id) is not { } type)
+                {
+                    return this.NotFound("No existe ese evento.");
+                }
+
+                var context = await this._configDataSource.GetContextAsync().ConfigureAwait(false);
+                var config = await this._configDataSource.GetOwnerAsync().ConfigureAwait(false);
+                var configuration = config.PlugInConfigurations.FirstOrDefault(c => c.TypeId == request.Id);
+                if (configuration is null)
+                {
+                    configuration = context.CreateNew<PlugInConfiguration>();
+                    configuration.TypeId = request.Id;
+                    config.PlugInConfigurations.Add(configuration);
+                }
+
+                // Al cambiar IsActive, el PlugInManager de cada servidor (que escucha esa propiedad)
+                // prende o apaga el plugin, igual que la pantalla de plugins del panel.
+                configuration.IsActive = request.Active;
+                await context.SaveChangesAsync().ConfigureAwait(false);
+
+                // Y si algun servidor no se entero (otra instancia de la configuracion), se le avisa a mano.
+                // Solo si hace falta: activar dos veces un plugin lo registraria dos veces.
+                foreach (var server in servers)
+                {
+                    var manager = server.Context.PlugInManager;
+                    if (manager.IsPlugInActive(type) == request.Active)
+                    {
+                        continue;
+                    }
+
+                    if (request.Active)
+                    {
+                        manager.ActivatePlugIn(type);
+                        if (server.Context.Configuration.PlugInConfigurations.FirstOrDefault(c => c.TypeId == request.Id) is { } inGame)
+                        {
+                            manager.ConfigurePlugIn(type.GUID, inGame);
+                        }
+                    }
+                    else
+                    {
+                        manager.DeactivatePlugIn(type);
+                    }
+                }
+
+                var nowActive = servers.All(s => s.Context.PlugInManager.IsPlugInActive(type) == request.Active);
+                this._logger.LogWarning("[EDITOR BRIDGE] evento {Event} {State}", EventName(type), request.Active ? "prendido" : "apagado");
+                return this.Ok(new { active = request.Active, applied = nowActive });
+            }
+            catch (Exception ex)
+            {
+                this._logger.LogError(ex, "[EDITOR BRIDGE] no se pudo cambiar el evento {Id}", request.Id);
+                return this.StatusCode(500, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Starts an event now, without waiting for its schedule.
+        /// </summary>
+        /// <param name="request">The request.</param>
+        /// <returns>On how many game servers it was started.</returns>
+        /// <remarks>
+        /// Es el ForceStart de OpenMU: el evento arranca en el proximo chequeo del servidor (segundos),
+        /// con sus avisos previos si los tiene. Tiene que estar prendido.
+        /// </remarks>
+        [HttpPost]
+        [Route("events/start")]
+        public IActionResult StartEvent([FromBody] IdRequest request)
+        {
+            if (request is null)
+            {
+                return this.BadRequest("Falta el cuerpo del pedido.");
+            }
+
+            var started = 0;
+            foreach (var server in this._gameServers.Values.OfType<GameServer>())
+            {
+                var plugIn = server.Context.PlugInManager.GetActivePlugInsOf<IPeriodicTaskPlugIn>()
+                    .FirstOrDefault(p => p.GetType().GUID == request.Id);
+                if (plugIn is null)
+                {
+                    continue;
+                }
+
+                plugIn.ForceStart();
+                started++;
+            }
+
+            if (started == 0)
+            {
+                return this.Conflict("Ese evento esta apagado o no se puede empezar a mano. Prendelo primero.");
+            }
+
+            this._logger.LogWarning("[EDITOR BRIDGE] evento {Id} empezado a mano en {Count} servidor(es)", request.Id, started);
+            return this.Ok(new { started });
+        }
+
+        private static IEnumerable<Type> EventTypes(PlugInManager manager)
+        {
+            return manager.GetKnownPlugInsOf<IPeriodicTaskPlugIn>()
+                .Where(t => EventPanelNames.Get(t) is not null)
+                .Append(typeof(LaCleonEventPlugIn))
+                .Distinct()
+                .OrderBy(EventName);
+        }
+
+        private static string EventName(Type type)
+        {
+            if (type == typeof(LaCleonEventPlugIn))
+            {
+                return "LaCleon";
+            }
+
+            return EventPanelNames.Get(type)?.Name ?? type.Name;
+        }
+
         private Player? FindPlayer(string? characterName)
         {
             if (string.IsNullOrWhiteSpace(characterName))
@@ -895,6 +1174,59 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
             /// Gets or sets the level of the option.
             /// </summary>
             public int Level { get; set; } = 1;
+        }
+
+        /// <summary>
+        /// The values of a monster to change.
+        /// </summary>
+        public class MonsterRequest
+        {
+            /// <summary>
+            /// Gets or sets the id of the monster definition.
+            /// </summary>
+            public Guid Id { get; set; }
+
+            /// <summary>
+            /// Gets or sets the respawn time in seconds; when not set, it stays as it is.
+            /// </summary>
+            public int? RespawnSeconds { get; set; }
+
+            /// <summary>
+            /// Gets or sets the attributes to change.
+            /// </summary>
+            public List<MonsterAttributeRequest>? Attributes { get; set; }
+        }
+
+        /// <summary>
+        /// One attribute of a monster.
+        /// </summary>
+        public class MonsterAttributeRequest
+        {
+            /// <summary>
+            /// Gets or sets the designation of the attribute, e.g. "Level".
+            /// </summary>
+            public string Name { get; set; } = string.Empty;
+
+            /// <summary>
+            /// Gets or sets the value.
+            /// </summary>
+            public float Value { get; set; }
+        }
+
+        /// <summary>
+        /// Switches an event on or off.
+        /// </summary>
+        public class EventActiveRequest
+        {
+            /// <summary>
+            /// Gets or sets the id of the plugin type of the event.
+            /// </summary>
+            public Guid Id { get; set; }
+
+            /// <summary>
+            /// Gets or sets a value indicating whether the event should be active.
+            /// </summary>
+            public bool Active { get; set; }
         }
 
         /// <summary>
