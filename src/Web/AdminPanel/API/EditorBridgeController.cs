@@ -44,7 +44,7 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
         /// <summary>
         /// La version del puente. El editor la muestra, y sirve para saber que build corre.
         /// </summary>
-        private const string BridgeVersion = "vorthania-bridge-5";
+        private const string BridgeVersion = "vorthania-bridge-6";
 
         private readonly IDictionary<int, IGameServer> _gameServers;
         private readonly IDataSource<GameConfiguration> _configDataSource;
