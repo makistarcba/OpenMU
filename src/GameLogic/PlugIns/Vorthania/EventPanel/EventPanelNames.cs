@@ -26,6 +26,7 @@ public static class EventPanelNames
         ["BloodCastleStartPlugIn"] = ("Blood Castle", EventPanelEntryKind.MiniGame),
         ["ChaosCastleStartPlugIn"] = ("Chaos Castle", EventPanelEntryKind.MiniGame),
         ["DevilSquareStartPlugIn"] = ("Devil Square", EventPanelEntryKind.MiniGame),
+        ["KanturuStartPlugIn"] = ("Kanturu", EventPanelEntryKind.MiniGame),
         ["HappyHourPlugIn"] = ("Happy Hour", EventPanelEntryKind.HappyHour),
     };
 

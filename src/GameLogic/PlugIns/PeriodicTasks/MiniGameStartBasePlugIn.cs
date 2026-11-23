@@ -7,6 +7,7 @@ namespace MUnique.OpenMU.GameLogic.PlugIns.PeriodicTasks;
 using System.Collections.Concurrent;
 using MUnique.OpenMU.GameLogic.MiniGames;
 using MUnique.OpenMU.GameLogic.PlayerActions.MiniGames;
+using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.EventPanel;
 using MUnique.OpenMU.PlugIns;
 
 /// <summary>
@@ -19,6 +20,12 @@ public abstract class MiniGameStartBasePlugIn<TConfiguration, TGameState> : Peri
     where TGameState : PeriodicTaskGameServerState
 {
     private static readonly ConcurrentDictionary<(Type PlugInType, IGameContext GameContext), EntranceAnnouncement> Announcements = new();
+
+    /// <summary>
+    /// VORTHANIA: the countdown between closing the entrance and starting the game
+    /// (MiniGameContext.CountdownMessageDuration).
+    /// </summary>
+    private static readonly TimeSpan EventPanelCountdown = TimeSpan.FromSeconds(30);
 
     /// <inheritdoc />
     public abstract MiniGameType Key { get; }
@@ -80,9 +87,71 @@ public abstract class MiniGameStartBasePlugIn<TConfiguration, TGameState> : Peri
             return ValueTask.FromResult<TimeSpan?>(null);
         }
 
-        var timeNow = new TimeOnly(DateTime.UtcNow.TimeOfDay.Ticks);
-        var nextRun = this.Configuration?.Timetable.Where(time => time > timeNow).Order().FirstOrDefault();
-        return ValueTask.FromResult(nextRun - timeNow);
+        // VORTHANIA: upstream compared the timetable (server local time) with the UTC time of
+        // day, so the "opens in X minutes" answer of the NPCs was off by the time zone offset
+        // (3 hours in Argentina). The configuration knows the time zone and the weekly schedule.
+        var nextStartUtc = this.Configuration?.GetNextStartUtc(gameContext.ServerTimeZone);
+        return ValueTask.FromResult(nextStartUtc is { } next ? next - DateTime.UtcNow : (TimeSpan?)null);
+    }
+
+    /// <summary>
+    /// VORTHANIA: event panel (H) of Blood Castle, Devil Square and Chaos Castle.
+    /// The timetable holds the time when the entrance OPENS (5 minutes before the event); the
+    /// panel shows the start of the event instead, which is when the entrance closes:
+    /// before: "15:00, en 12 min"; entrance open: "Entrada abierta, quedan 4:32";
+    /// after closing: "En curso, quedan 14:10" until the game is expected to end.
+    /// </summary>
+    public override EventPanelEntry? GetEventPanelEntry(IGameContext gameContext)
+    {
+        if (base.GetEventPanelEntry(gameContext) is not { } entry)
+        {
+            return null;
+        }
+
+        var games = gameContext.MiniGames.GetRunningMiniGames(this.Key)
+            .Where(game => game.Definition.MapCreationPolicy == MiniGameMapCreationPolicy.Shared)
+            .Where(IsActive)
+            .ToList();
+
+        var openGames = games.Where(game => game.State == MiniGameState.Open).ToList();
+        if (openGames.Count > 0)
+        {
+            var entranceClosesUtc = openGames.Max(game => game.EnterEndsAtUtc);
+            return entry with { State = EventPanelEntryState.Running, StartUtc = entranceClosesUtc, EndUtc = entranceClosesUtc };
+        }
+
+        if (games.Count > 0)
+        {
+            // The old client labels a running mini game as "Entrada abierta"; any other kind
+            // as "En curso". Once the entrance is closed, the latter is what's true.
+            var startedUtc = games.Max(game => game.EnterEndsAtUtc);
+            var endUtc = games.Max(game => game.EnterEndsAtUtc + EventPanelCountdown + game.Definition.GameDuration.AtLeast(EventPanelCountdown));
+            return entry with
+            {
+                Kind = EventPanelEntryKind.Other,
+                State = EventPanelEntryState.Running,
+                StartUtc = startedUtc,
+                EndUtc = endUtc > DateTime.UtcNow ? endUtc : DateTime.UtcNow,
+            };
+        }
+
+        // No game around (not started yet, or it already ended while the task duration is
+        // still running): show the next start.
+        var nextOpeningUtc = entry.State == EventPanelEntryState.Running
+            ? this.Configuration?.GetNextStartUtc(gameContext.ServerTimeZone)
+            : entry.StartUtc;
+        if (nextOpeningUtc is not { } opening)
+        {
+            return entry with { State = EventPanelEntryState.NoSchedule, StartUtc = null, EndUtc = null };
+        }
+
+        return entry with
+        {
+            State = entry.State == EventPanelEntryState.Starting ? EventPanelEntryState.Starting : EventPanelEntryState.Scheduled,
+            StartUtc = opening + this.GetSharedEnterDuration(gameContext),
+            EndUtc = null,
+            Monsters = Array.Empty<EventPanelMonsterGroup>(),
+        };
     }
 
     /// <inheritdoc />
@@ -147,6 +216,7 @@ public abstract class MiniGameStartBasePlugIn<TConfiguration, TGameState> : Peri
             }
 
             Announcements.TryRemove(key, out _);
+            EventPanelService.NotifyChanged(gameContext); // VORTHANIA: "Entrada abierta" -> "En curso" en el panel (H)
         }
     }
 
@@ -227,6 +297,20 @@ public abstract class MiniGameStartBasePlugIn<TConfiguration, TGameState> : Peri
     {
         return !game.IsDisposed && !game.IsDisposing
             && game.State is MiniGameState.Open or MiniGameState.Closed or MiniGameState.Playing;
+    }
+
+    /// <summary>
+    /// VORTHANIA: how long the entrance of the shared games of this event stays open.
+    /// </summary>
+    /// <param name="gameContext">The game context.</param>
+    /// <returns>The longest entrance duration of the available definitions.</returns>
+    private TimeSpan GetSharedEnterDuration(IGameContext gameContext)
+    {
+        return gameContext.Configuration.MiniGameDefinitions
+            .Where(d => d.Type == this.Key && d.MapCreationPolicy == MiniGameMapCreationPolicy.Shared && d.IsAvailable())
+            .Select(d => d.EnterDuration.AtLeast(EventPanelCountdown))
+            .DefaultIfEmpty(TimeSpan.Zero)
+            .Max();
     }
 
     /// <summary>

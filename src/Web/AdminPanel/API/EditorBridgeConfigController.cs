@@ -205,9 +205,28 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
                 serializer.SetConfiguration(model, new ByDataSourceReferenceHandler(this._configDataSource));
                 var json = serializer.CustomConfiguration ?? "{}";
 
-                var preview = await this._pluginWrites.ReplaceFromPanelAsync(request.Id, model, json, false, null, cancellationToken).ConfigureAwait(false);
-                var token = preview["confirmationToken"]?.GetValue<string>();
-                await this._pluginWrites.ReplaceFromPanelAsync(request.Id, model, json, true, token, cancellationToken).ConfigureAwait(false);
+                // ReplaceFromPanelAsync (el del editor grafico del panel) exige el panel abierto en el
+                // navegador: desde una API key contesta "requires an authenticated panel circuit". Se
+                // guarda igual que events/active: por el contexto del panel, auditado.
+                await this._executor.ExecuteAsync<JsonObject>(
+                    AdminRoles.Administrator,
+                    "editor_plugin_configuration",
+                    new { request.Id },
+                    async _ =>
+                    {
+                        var context = await this._configDataSource.GetContextAsync().ConfigureAwait(false);
+                        var config = await this._configDataSource.GetOwnerAsync().ConfigureAwait(false);
+                        var persisted = config.PlugInConfigurations.FirstOrDefault(c => c.TypeId == request.Id)
+                            ?? throw new AdminOperationException("Ese plugin no tiene configuracion en la base. Prendelo una vez desde el panel.", AdminOperationErrorKind.InvalidInput);
+                        persisted.CustomConfiguration = json;
+                        if (!await context.SaveChangesAsync().ConfigureAwait(false))
+                        {
+                            throw new AdminOperationException("No se pudo guardar.");
+                        }
+
+                        return new JsonObject { ["saved"] = true };
+                    },
+                    cancellationToken).ConfigureAwait(false);
 
                 // Por si algun servidor tiene otra copia de la configuracion: que el plugin que esta
                 // corriendo reciba los numeros nuevos ya.

@@ -14,6 +14,7 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
     using MUnique.OpenMU.GameLogic.PlugIns;
     using MUnique.OpenMU.GameLogic.PlugIns.PeriodicTasks;
     using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.EventPanel;
+    using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.Kundun;
     using MUnique.OpenMU.GameLogic.PlugIns.Vorthania.LaCleon;
     using MUnique.OpenMU.GameLogic.Views.Character;
     using MUnique.OpenMU.GameLogic.Views.Inventory;
@@ -44,7 +45,7 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
         /// <summary>
         /// La version del puente. El editor la muestra, y sirve para saber que build corre.
         /// </summary>
-        private const string BridgeVersion = "vorthania-bridge-6";
+        private const string BridgeVersion = "vorthania-bridge-8";
 
         private readonly IDictionary<int, IGameServer> _gameServers;
         private readonly IDataSource<GameConfiguration> _configDataSource;
@@ -920,6 +921,7 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
             return manager.GetKnownPlugInsOf<IPeriodicTaskPlugIn>()
                 .Where(t => EventPanelNames.Get(t) is not null)
                 .Append(typeof(LaCleonEventPlugIn))
+                .Append(typeof(KundunEventPlugIn))
                 .Distinct()
                 .OrderBy(EventName);
         }
@@ -929,6 +931,11 @@ namespace MUnique.OpenMU.Web.AdminPanel.API
             if (type == typeof(LaCleonEventPlugIn))
             {
                 return "LaCleon";
+            }
+
+            if (type == typeof(KundunEventPlugIn))
+            {
+                return "Kundun";
             }
 
             return EventPanelNames.Get(type)?.Name ?? type.Name;
