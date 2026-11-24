@@ -265,5 +265,10 @@ public class ResetCharacterAction
         }
 
         await this._player.InvokeViewPlugInAsync<IUpdateLevelPlugIn>(p => p.UpdateLevelAsync()).ConfigureAwait(false);
+
+        // VORTHANIA: el contador de resets de la ventana C solo llega en el paquete de estadisticas
+        // completas (el de entrar al mapa). Sin esto se veia recien al reloguear (tarjeta #2, 24/11/2026).
+        // Mismo llamado que ya hace ResetStatsAction despues del respec.
+        await this._player.InvokeViewPlugInAsync<IUpdateCharacterStatsPlugIn>(p => p.UpdateCharacterStatsAsync()).ConfigureAwait(false);
     }
 }
