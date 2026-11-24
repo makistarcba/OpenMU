@@ -58,6 +58,16 @@ public class MoveItemAction
             return;
         }
 
+        // VORTHANIA: un item con opcion de Harmony no se comercia (trade ni tienda personal). Tarjeta #16, 24/11/2026.
+        if (fromStorage != toStorage
+            && toStorage is Storages.Trade or Storages.PersonalStore
+            && PlugIns.Vorthania.VorthaniaTradeRules.HasHarmonyOption(item))
+        {
+            await player.ShowBlueMessageAsync(PlugIns.Vorthania.VorthaniaTradeRules.HarmonyItemMessage).ConfigureAwait(false);
+            await player.InvokeViewPlugInAsync<IItemMoveFailedPlugIn>(p => p.ItemMoveFailedAsync(item)).ConfigureAwait(false);
+            return;
+        }
+
         if (fromStorage != toStorage && GetRuleBlockingMove(item, toStorage) is { } blockedMessage)
         {
             player.Logger.LogWarning(

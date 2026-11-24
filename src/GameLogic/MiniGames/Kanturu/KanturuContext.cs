@@ -64,6 +64,11 @@ public sealed class KanturuContext : MiniGameContext
     private readonly Dictionary<KanturuPhaseKind, IKanturuPhaseRunner> _phaseRunners;
     private readonly TimeSpan _towerOpenDuration;
 
+    /// <summary>
+    /// VORTHANIA: el Moonstone Pendant con el que entro cada jugador a la pelea; se gasta al salir.
+    /// </summary>
+    private readonly ConcurrentDictionary<Player, Item> _vorthaniaUsedPendants = new();
+
     // State precedes the registry read lock; retain it through broadcasts to prevent late battle delivery.
     private readonly AsyncLock _stateLock = new();
 
@@ -291,6 +296,16 @@ public sealed class KanturuContext : MiniGameContext
             Interlocked.Exchange(ref this._everEntered, 1);
         }
 
+        // VORTHANIA: el Moonstone Pendant sirve para UNA entrada al evento (tarjeta #14, 24/11/2026).
+        // Se anota el que tiene puesto al entrar a la pelea (no a la torre) y se borra cuando sale del mapa.
+        if (args.Object is Player enteringPlayer
+            && !this.TowerMode
+            && this.CurrentKanturuState != KanturuState.Tower
+            && enteringPlayer.Inventory?.EquippedItems.FirstOrDefault(IsVorthaniaMoonstonePendant) is { } pendant)
+        {
+            this._vorthaniaUsedPendants[enteringPlayer] = pendant;
+        }
+
         // Nothing else broadcasts during the tower, so players joining it late would
         // miss the tower state. Both broadcasts are idempotent for the other players.
         // Their position is already correct: tower entrants spawn at the tower entry
@@ -301,6 +316,30 @@ public sealed class KanturuContext : MiniGameContext
             await this.ShowLiveMinionCountAsync().ConfigureAwait(false);
             await this.SendBarrierAttributesAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <inheritdoc/>
+    protected override async ValueTask OnObjectRemovedFromMapAsync((GameMap Map, ILocateable Object) args)
+    {
+        // VORTHANIA: al salir del evento (muerte, warp, fin, desconexion) el pendant usado se gasta.
+        if (args.Object is Player leavingPlayer
+            && this._vorthaniaUsedPendants.TryRemove(leavingPlayer, out var usedPendant))
+        {
+            try
+            {
+                if (leavingPlayer.Inventory is { } inventory && inventory.Items.Contains(usedPendant))
+                {
+                    await leavingPlayer.DestroyInventoryItemAsync(usedPendant).ConfigureAwait(false);
+                    await leavingPlayer.ShowBlueMessageAsync("Tu Moonstone Pendant se gasto en Kanturu.").ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Logger.LogError(ex, "Vorthania: no pude gastar el Moonstone Pendant de {Player}.", leavingPlayer);
+            }
+        }
+
+        await base.OnObjectRemovedFromMapAsync(args).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -945,6 +984,12 @@ public sealed class KanturuContext : MiniGameContext
             .Count(monster => monster.IsAlive && !this.IsNightmare(monster));
         await this.ShowMonsterUserCountAsync(aliveCount, this.PlayerCount).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// VORTHANIA: Moonstone Pendant = item 13/38.
+    /// </summary>
+    private static bool IsVorthaniaMoonstonePendant(Item item)
+        => item.Definition is { Group: 13, Number: 38 };
 
     private bool IsNightmare(Monster monster)
     {

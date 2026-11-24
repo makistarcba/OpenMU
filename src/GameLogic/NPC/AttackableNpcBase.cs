@@ -480,7 +480,9 @@ public abstract class AttackableNpcBase : NonPlayerCharacter, IAttackable
             exp += share.Experience;
         }
 
-        var (generatedItems, droppedMoney) = await this._dropGenerator.GenerateItemDropsAsync(this.Definition, exp, killer).ConfigureAwait(false);
+        // VORTHANIA: con el plugin "Vorthania: Zen drop" prendido, el zen sale de la experiencia base (sin rates).
+        var moneyBase = PlugIns.Vorthania.ZenDropPlugIn.GetMoneyBase(killer, this) ?? exp;
+        var (generatedItems, droppedMoney) = await this._dropGenerator.GenerateItemDropsAsync(this.Definition, moneyBase, killer).ConfigureAwait(false);
         if (droppedMoney > 0)
         {
             await this.HandleMoneyDropAsync(droppedMoney.Value, killer, experienceShares).ConfigureAwait(false);
