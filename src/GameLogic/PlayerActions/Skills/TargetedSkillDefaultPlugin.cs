@@ -86,6 +86,16 @@ public class TargetedSkillDefaultPlugin : TargetedSkillPluginBase
 
         if (!player.IsInRange(target.Position, skill.Range + 2))
         {
+            // VORTHANIA (tarjeta #4, 24/11/2026): para diagnosticar skills (ej. Fire Burst) que "no pegan".
+            player.Logger.LogInformation(
+                "VORTHANIA skill fuera de rango: {Skill} de {Player} a {Target}, distancia {Distance:F1}, rango {Range}+2, caminando {Walking}",
+                skill.Name,
+                player.Name,
+                target,
+                player.GetDistanceTo(target),
+                skill.Range,
+                target is ISupportWalk { IsWalking: true });
+
             // target position might be out of sync so we send the current coordinates to the client again.
             if (!(target is ISupportWalk { IsWalking: true }))
             {

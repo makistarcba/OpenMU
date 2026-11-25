@@ -92,6 +92,13 @@ public class PartyRequestAction
             return;
         }
 
+        // VORTHANIA: /request auto y las opciones de aceptar del MU Helper (amigos, guild) tambien valen para un
+        // jugador sin party; antes solo para el master de una party o un personaje offline (tarjeta #6).
+        if (await PartyRequestHandler.TryAutoAcceptPartyRequestAsync(toRequest, player).ConfigureAwait(false))
+        {
+            return;
+        }
+
         if (await toRequest.PlayerState.TryAdvanceToAsync(PlayerState.PartyRequest).ConfigureAwait(false))
         {
             await this.SendPartyRequestAsync(toRequest, player).ConfigureAwait(false);

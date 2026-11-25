@@ -20,6 +20,13 @@ public static class PartyRequestHandler
     /// <returns>True if the criteria matched (auto-accept was attempted, regardless of success); false if no criteria matched.</returns>
     public static async ValueTask<bool> TryAutoAcceptPartyRequestAsync(Player receiver, Player requester)
     {
+        // VORTHANIA: /request auto acepta a cualquiera (tarjeta #6, 24/11/2026).
+        if (PlugIns.Vorthania.RequestAutoChatCommandPlugIn.IsAutoAccepting(receiver))
+        {
+            await AcceptPartyRequestAsync(receiver, requester).ConfigureAwait(false);
+            return true;
+        }
+
         var settings = receiver.MuHelperSettings;
         if (settings is null)
         {

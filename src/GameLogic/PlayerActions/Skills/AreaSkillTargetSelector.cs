@@ -58,11 +58,12 @@ public static class AreaSkillTargetSelector
         }
 
         // Include the explicit extra target if it's valid and in range.
-        // Both positions are server-side and evaluated instantaneously, so no
-        // slack is added here, unlike for the client-aimed point.
+        // VORTHANIA (tarjeta #4, 24/11/2026): el cliente dibuja al bicho atrasado respecto del servidor
+        // (el servidor ya lo movio a la casilla siguiente). Sin margen, un bicho que camina queda "fuera
+        // de rango" aunque en pantalla este pegado. Margen: 1 casilla, 2 si esta caminando.
         if (extraTarget is not null
             && extraTarget.CheckSkillTargetRestrictions(player, skill)
-            && player.IsInRange(extraTarget.Position, skill.Range)
+            && player.IsInRange(extraTarget.Position, skill.Range + VorthaniaRangeSlack(extraTarget))
             && !extraTarget.IsAtSafezone())
         {
             yield return extraTarget;
@@ -189,12 +190,25 @@ public static class AreaSkillTargetSelector
             .Where(a => player.GameContext.Configuration.AreaSkillHitsPlayer || a is not Player);
     }
 
+    /// <summary>
+    /// VORTHANIA: el margen maximo de <see cref="VorthaniaRangeSlack"/>.
+    /// </summary>
+    private const int VorthaniaMaxRangeSlack = 2;
+
+    /// <summary>
+    /// VORTHANIA: margen de casillas por la diferencia entre lo que ve el cliente y la posicion del servidor.
+    /// </summary>
+    private static int VorthaniaRangeSlack(IAttackable target)
+        => target is ISupportWalk { IsWalking: true } ? VorthaniaMaxRangeSlack : 1;
+
     private static IEnumerable<IAttackable> GetTargetsInRange(Player player, Point targetAreaCenter, Skill skill, byte rotation)
     {
         var (queryCenter, queryRange) = GetQueryCenterAndRange(player.Position, targetAreaCenter, skill);
 
+        // VORTHANIA (tarjeta #4): mismo margen que el objetivo marcado, para los bichos que caminan.
         IEnumerable<IAttackable> targetsInRange = player.CurrentMap?
-                    .GetAttackablesInRange(queryCenter, queryRange)
+                    .GetAttackablesInRange(queryCenter, queryRange + VorthaniaMaxRangeSlack)
+                    .Where(a => a.IsInRange(queryCenter, queryRange + VorthaniaRangeSlack(a)))
             ?? [];
         targetsInRange = WhereAttackableByDefault(targetsInRange, player, skill);
 

@@ -28,17 +28,15 @@ public class AntidoteConsumeHandlerPlugIn : BaseConsumeHandlerPlugIn
     {
         if (await base.ConsumeItemAsync(player, item, targetItem, fruitUsage).ConfigureAwait(false))
         {
+            // VORTHANIA: saca veneno Y hielo (antes, si tenias los dos, solo sacaba el veneno). Tarjeta #3, 24/11/2026.
             if (player.MagicEffectList.TryGetEffect(PoisonEffectNumber, out var poisonEffect))
             {
                 await poisonEffect.DisposeAsync().ConfigureAwait(false);
             }
-            else if (player.MagicEffectList.TryGetEffect(IceEffectNumber, out var iceEffect))
+
+            if (player.MagicEffectList.TryGetEffect(IceEffectNumber, out var iceEffect))
             {
                 await iceEffect.DisposeAsync().ConfigureAwait(false);
-            }
-            else
-            {
-                // No other effect to remove
             }
 
             return true;

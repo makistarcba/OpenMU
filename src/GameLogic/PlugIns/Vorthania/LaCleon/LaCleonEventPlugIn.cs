@@ -62,6 +62,9 @@ public class LaCleonEventPlugIn
     /// <param name="source">The source of the reward.</param>
     public static async ValueTask RewardAsync(Player player, LaCleonRewardSource source)
     {
+        // VORTHANIA 24/11/2026: los mismos logros dan Goblin Points para el Cash Shop (si ese plugin esta prendido).
+        await GoblinPointsForEventsPlugIn.RewardAsync(player, source).ConfigureAwait(false);
+
         try
         {
             if (player.GameContext.FeaturePlugIns.GetPlugIn<LaCleonEventPlugIn>() is { } plugIn)
